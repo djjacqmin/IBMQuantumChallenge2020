@@ -1,6 +1,6 @@
 from qiskit import *
 from qiskit import QuantumRegister, ClassicalRegister, QuantumCircuit
-from qiskit import IBMQ, Aer, execute
+from qiskit import IBMQ, execute
 from qc_grader import prepare_ex2b, grade_ex2b
 import numpy as np
 
@@ -189,7 +189,8 @@ def add_rot_about_equisuperpos(qc, qubits, qr_extr):
 
 def week2b_ans_func(lightsout4):
     # Build your circuit here
-    #  In addition, please make sure your function can solve the problem with different inputs (lightout4). We will cross validate with different inputs.
+    #  In addition, please make sure your function can solve the problem with d
+    # different inputs (lightout4). We will cross validate with different inputs.
     counting_qubits = 3
 
     # We will have many quantum registers.
