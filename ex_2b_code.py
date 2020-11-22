@@ -1,8 +1,10 @@
+from qiskit import *
 from qiskit import QuantumRegister, ClassicalRegister, QuantumCircuit
-from qiskit import Aer, execute
+from qiskit import IBMQ, Aer, execute
+from qc_grader import prepare_ex2b, grade_ex2b
 import numpy as np
 
-# provider = IBMQ.load_account()
+provider = IBMQ.load_account()
 
 from qiskit.transpiler import PassManager
 from qiskit.transpiler.passes import Unroller
@@ -17,6 +19,20 @@ def calculate_score(qc):
     return count_dict["u3"] + count_dict["cx"] * 10, count_dict
 
 
+def mark_address(qc, qubits, index):
+    if index == 0:
+        qc.x(qubits)
+    elif index == 1:
+        qc.x(qubits[0])
+    elif index == 2:
+        qc.x(qubits[1])
+    elif index == 3:
+        pass
+    else:
+        raise ValueError("index must be 0, 1, 2, 3")
+    return qc
+
+
 def get_lightsout4_as_qram(lightsout4, invert_bits=True):
 
     address = QuantumRegister(2, name="addr")
@@ -27,25 +43,48 @@ def get_lightsout4_as_qram(lightsout4, invert_bits=True):
     if invert_bits:
         lightsout4 = [[(item + 1) % 2 for item in row] for row in lightsout4]
 
-    # Load data
-    for i, addr in enumerate(["00", "01", "10", "11"]):
+    np_lo = np.array(lightsout4)
+    np_lo = np_lo.T
 
-        # Set address bits
-        if addr[0] == "0":
-            qc.x(address[0])
-        if addr[1] == "0":
-            qc.x(address[1])
+    for i, row in enumerate(np_lo):
 
-        # Write data
-        for j, bit in enumerate(lightsout4[i]):
-            if bit == 1:
-                qc.ccx(address[0], address[1], data[j])
+        if sum(row) == 0:
+            pass
+        elif sum(row) == 4:
+            qc.x(data[i])
+        elif sum(row) == 3:
+            # Mark this data element 1
+            qc.x(data[i])
 
-        # Reset address bits
-        if addr[0] == "0":
-            qc.x(address[0])
-        if addr[1] == "0":
-            qc.x(address[1])
+            # Create an exception for the zero
+            qc = mark_address(qc, address, row.argmin())
+            qc.rccx(address[0], address[1], data[i])
+
+            # Reverse markings
+            qc = mark_address(qc, address, row.argmin())
+
+        elif sum(row) == 1:
+            # Mark the 1
+            qc = mark_address(qc, address, row.argmax())
+            qc.rccx(address[0], address[1], data[i])
+            qc = mark_address(qc, address, row.argmax())
+
+        elif sum(row) == 2:
+            # There are three cases. Let's focus on "11"
+
+            if row[3] == row[2]:  # 11 = 10
+                if row[3] == 0:
+                    qc.x(data[i])
+                qc.cx(address[0], data[i])
+            elif row[3] == row[1]:  # 11 = 01
+                if row[3] == 0:
+                    qc.x(data[i])
+                qc.cx(address[1], data[i])
+            elif row[3] == row[0]:  # 11 = 00
+                if row[3] == 1:
+                    qc.x(data[i])
+                qc.cx(address[0], data[i])
+                qc.cx(address[1], data[i])
 
     # Convert to gate and return
     load_qram = qc.to_gate()
@@ -69,9 +108,11 @@ def qft_dagger(n):
     return qft_dag
 
 
-def get_rot_about_oracle(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, counting_qubits):
+def get_rot_about_oracle(
+    qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, qr_extr, counting_qubits
+):
 
-    qc = QuantumCircuit(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl)
+    qc = QuantumCircuit(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, qr_extr)
 
     connections = [
         [0, 1, 3],
@@ -106,7 +147,7 @@ def get_rot_about_oracle(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, counting_q
     qc.x(qr_coun[2:])
 
     # Check for solution
-    qc.mct(qr_data[:] + qr_coun[2:], qr_ancl)
+    qc.mct(qr_data[:] + qr_coun[2:], qr_ancl, qr_extr, mode="recursion")
 
     # Unmark the desired state: 3 or less = 00**
     qc.x(qr_coun[2:])
@@ -133,12 +174,12 @@ def get_rot_about_oracle(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, counting_q
     return rot_oracle
 
 
-def add_rot_about_equisuperpos(qc, qubits):
+def add_rot_about_equisuperpos(qc, qubits, qr_extr):
 
     qc.h(qubits)
     qc.x(qubits)
     qc.h(qubits[-1])
-    qc.mct(qubits[:-1], qubits[-1])
+    qc.mct(qubits[:-1], qubits[-1], qr_extr, mode="recursion")
     qc.h(qubits[-1])
     qc.x(qubits)
     qc.h(qubits)
@@ -148,9 +189,8 @@ def add_rot_about_equisuperpos(qc, qubits):
 
 def week2b_ans_func(lightsout4):
     # Build your circuit here
-    #  In addition, please make sure your function can solve the problem with
-    # different inputs (lightout4). We will cross validate with different inputs.
-    counting_qubits = 4
+    #  In addition, please make sure your function can solve the problem with different inputs (lightout4). We will cross validate with different inputs.
+    counting_qubits = 3
 
     # We will have many quantum registers.
     qr_soln = QuantumRegister(9, name="soln")  # One for the solution part of the oracle
@@ -158,11 +198,14 @@ def week2b_ans_func(lightsout4):
     qr_data = QuantumRegister(9, name="data")  # One for data part of qRAM
     qr_coun = QuantumRegister(counting_qubits, name="count")
     qr_ancl = QuantumRegister(1, name="ancl")  # One working qubit for Grover's Alg
+    qr_extr = QuantumRegister(2, name="extra")
 
+    # cr_soln = ClassicalRegister(9, name="soln_c")
     cr_addr = ClassicalRegister(2, name="addr_c")
+    # cr_data = ClassicalRegister(9, name="data_c")
 
     # qc = QuantumCircuit(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, cr_soln, cr_addr, cr_data)
-    qc = QuantumCircuit(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, cr_addr)
+    qc = QuantumCircuit(qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, qr_extr, cr_addr)
 
     # Put address and solution qubits into superposition
     qc.h(qr_soln)
@@ -176,27 +219,26 @@ def week2b_ans_func(lightsout4):
     # Load commonly used gates:
     qram_gate = get_lightsout4_as_qram(lightsout4)
     oracle_gate = get_rot_about_oracle(
-        qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, counting_qubits=4
+        qr_soln, qr_addr, qr_data, qr_coun, qr_ancl, qr_extr, counting_qubits
     )
 
-    qc.append(qram_gate, qr_addr[:] + qr_data[:])
-
-    num_iterations = 15
+    num_iterations = 5
     for i in range(num_iterations):
 
         # Perform qRAM operation
-        # qc.append(qram_gate, qr_addr[:] + qr_data[:])
+        qc.append(qram_gate, qr_addr[:] + qr_data[:])
 
         # Perform rotation about solution state
         qc.append(
-            oracle_gate, qr_soln[:] + qr_addr[:] + qr_data[:] + qr_coun[:] + qr_ancl[:]
+            oracle_gate,
+            qr_soln[:] + qr_addr[:] + qr_data[:] + qr_coun[:] + qr_ancl[:] + qr_extr[:],
         )
 
         # Reverse qRAM operation
-        # qc.append(qram_gate.inverse(), qr_addr[:] + qr_data[:])
+        qc.append(qram_gate.inverse(), qr_addr[:] + qr_data[:])
 
         # Perform rotation about equisuperposition state
-        qc = add_rot_about_equisuperpos(qc, qr_soln[:] + qr_addr[:])
+        qc = add_rot_about_equisuperpos(qc, qr_soln[:] + qr_addr[:], qr_extr)
 
         qc.barrier()
 
@@ -244,6 +286,7 @@ if __name__ == "__main__":
     # Reverse the output string.
     qc = week2b_ans_func(lightsout4=lightsout4)
 
+    """
     # backend = provider.get_backend('ibmq_qasm_simulator')
     backend = Aer.get_backend("qasm_simulator")
     job = execute(
@@ -257,3 +300,25 @@ if __name__ == "__main__":
     result = job.result()
     count = result.get_counts()
     print(count)
+    """
+
+    # Execute your circuit with following prepare_ex2b() function.
+    # The prepare_ex2b() function works like the execute() function with
+    # only QuantumCircuit as an argument.
+    job = prepare_ex2b(week2b_ans_func)
+
+    result = job.result()
+    count = result.get_counts()
+    original_problem_set_counts = count[0]
+
+    print(original_problem_set_counts)
+
+    grade_ex2b(job)
+
+# Ideas to try:
+# Separable oracle.
+# Inline counting with to eliminate counting bits, then use v-chain
+# DONE: Change to more efficient logic for qRAM
+# qRAM once at the beginning?
+# while loop on check solution to get lucky
+# Testing suite
