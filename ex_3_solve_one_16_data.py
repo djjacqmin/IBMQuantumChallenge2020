@@ -142,4 +142,3 @@ if __name__ == "__main__":
     for k, v in count.items():
         print(f"{k} : {v}")
     qc.draw(output="mpl")
-
