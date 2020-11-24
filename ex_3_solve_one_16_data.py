@@ -1,5 +1,5 @@
 from qiskit import QuantumRegister, ClassicalRegister, QuantumCircuit
-from qiskit import execute
+from qiskit import execute, Aer
 from qc_grader import prepare_ex3, grade_ex3
 import numpy as np
 
@@ -37,33 +37,55 @@ def convert_problem_set_to_binary(ps: list):
         row_binary = "".join(row_binary)
         ps_binary.append(row_binary)
 
-    print(ps_binary)
+    return ps_binary
 
 
-def data_loader(qc, qr_data_row, qr_data_col, qr_data_state, problem):
+def data_loader(qc, qr_data, problem):
+    for i, bit in enumerate(problem):
+        if bit == "1":
+            qc.x(qr_data[i])
 
-    for i, pair in enumerate(problem):
-        binary_str = "{0:03b}".format(i)
-
-        # Encode address bits
-        for j in range(3):
-            if binary_str[j] == "0":
-                qc.x(qr_addr[j])
-
-        # Remove encode address bits
-        for j in range(3):
-            if binary_str[j] == "0":
-                qc.x(qr_addr[j])
-
-        # 6 qubits for state???
+    return qc
 
 
-def oracle():
-    pass
+def oracle(qc, qr_shot, qr_data, qr_ancl):
+
+    connections = [
+        [0, 1, 2, 3],
+        [4, 5, 6, 7],
+        [8, 9, 10, 11],
+        [12, 13, 14, 15],
+        [0, 4, 8, 12],
+        [1, 5, 9, 13],
+        [2, 6, 10, 14],
+        [3, 7, 11, 15],
+    ]
+
+    # Append logic for game
+    for i, box in enumerate(connections):
+        for connection in box:
+            qc.cz(qr_shot[i], qr_data[connection])
+
+    qc.mct(qr_shot, qr_ancl)
+
+    # Uncompute logic for game
+    for i, box in enumerate(reversed(connections)):
+        for connection in reversed(box):
+            qc.cx(qr_shot[i], qr_data[connection])
+
+    return qc
 
 
-def diffusion():
-    pass
+def diffusion(qc, qubits, qr_extr):
+    qc.h(qubits)
+    qc.x(qubits)
+    qc.h(qubits[-1])
+    qc.mct(qubits[:-1], qubits[-1], qr_extr, mode="recursion")
+    qc.h(qubits[-1])
+    qc.x(qubits)
+    qc.h(qubits)
+
+    return qc
 
 
 def week3_ans_func(problem_set):
@@ -73,21 +95,31 @@ def week3_ans_func(problem_set):
     problem = convert_problem_set_to_binary(problem_set)[1]
 
     qr_shot = QuantumRegister(8)
-    qr_data_row = QuantumRegister(2)
-    qr_data_col = QuantumRegister(2)
-    qr_data_state = QuantumRegister(1)
-    qr_addr = QuantumRegister(3)
+    qr_data = QuantumRegister(16)
+    qr_ancl = QuantumRegister(1)
+    qr_extr = QuantumRegister(2)
 
     cr = ClassicalRegister(8)
 
-    qc = QuantumCircuit(qr_shot, qr_data, cr)
+    qc = QuantumCircuit(qr_shot, qr_data, qr_ancl, qr_extr, cr)
 
-    qc = data_loader(qc, qr_data_row, qr_data_col, qr_data_state, qr_addr, problem)
+    # Load data
+    qc = data_loader(qc, qr_data, problem)
+
+    # Prepare ancilla
+    qc.x(qr_ancl)
+    qc.h(qr_ancl)
+
+    # Put solution into superposition
+    qc.h(qr_shot)
 
     # Code for Grover's algorithm with iterations = 1 will be as follows.
-    for i in range(1):
-        oracle()
-        diffusion()
+    for i in range(5):
+        oracle(qc, qr_shot, qr_data, qr_ancl)
+        diffusion(qc, qr_shot, qr_extr)
+
+    qc.measure(qr_shot, cr)
+    qc = qc.reverse_bits()
 
     return qc
 
@@ -95,4 +127,19 @@ def week3_ans_func(problem_set):
 if __name__ == "__main__":
 
     qc = week3_ans_func(problem_set)
+
+    backend = Aer.get_backend("qasm_simulator")
+    job = execute(
+        qc,
+        backend=backend,
+        shots=1000,
+        seed_simulator=12345,
+        backend_options={"fusion_enable": True},
+    )
+    result = job.result()
+    count = result.get_counts()
+
+    for k, v in count.items():
+        print(f"{k} : {v}")
+    qc.draw(output="mpl")
 
