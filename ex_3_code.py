@@ -161,7 +161,7 @@ def week3_ans_func(problem_set, count_shots=False):
 
     # Measure results
     if count_shots:
-        qc.measure(qr_shots, cr_shots)
+        qc.measure(qr_shots, cr_shots[::-1])
     else:
         qc.measure(qr_address, cr_address)
 
