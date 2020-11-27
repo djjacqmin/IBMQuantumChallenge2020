@@ -83,3 +83,4 @@ def game_logic_oracle(
         return game_logic
     else:
         return qc
+
