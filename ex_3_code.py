@@ -97,8 +97,7 @@ def week3_ans_func(problem_set, count_shots=False):
         qr_count_me=qr_shots, qr_counter=qr_counter, return_gate=True
     )
 
-    game_iterations = 2
-    count_iterations = 1
+    game_iterations = 1
 
     # Code for Grover's algorithm with iterations = 1 will be as follows.
     for i in range(1):
@@ -106,7 +105,6 @@ def week3_ans_func(problem_set, count_shots=False):
         # Perform Grover's algorithm for game logic
         for j in range(game_iterations):
 
-            print(f"Starting game iteration {j}")
             # Append game gate
             qc.append(game_gate, game_qubits)
 
@@ -122,28 +120,42 @@ def week3_ans_func(problem_set, count_shots=False):
             # Diffusion circuit
             qc = diffusion(qc, qr_shots, qr_extra)
 
-        # Perform Grover's algorithm for game logic
-        for j in range(count_iterations):
+        # Append counter gate
+        qc.append(counter_gate, counter_qubits)
 
-            print(f"Starting count iteration {j}")
-            # Append game gate
-            qc.append(counter_gate, counter_qubits)
+        # Mark the desired state: 3 or less = 00**
+        qc.x(qr_counter[2:])
 
-            # Mark the desired state: 3 or less = 00**
-            qc.x(qr_counter[2:])
+        # Check for the solution
+        qc.mct(qr_counter, qr_ancilla[1], qr_extra, mode="v-chain")
+        qc.barrier()
 
-            # Check for the solution
-            qc.mct(qr_counter, qr_ancilla[1], qr_extra, mode="v-chain")
-            qc.barrier()
+        # Unmark the desired state
+        qc.x(qr_counter[2:])
 
-            # Unmark the desired state
-            qc.x(qr_counter[2:])
+        # Uncompute counter gate
+        qc.append(counter_gate.inverse(), counter_qubits)
 
-            # Uncompute game gate
-            qc.append(counter_gate.inverse(), counter_qubits)
+        # Reverse Grover's algorithm for game logic
+        for j in range(game_iterations):
 
             # Diffusion circuit
-            qc = diffusion(qc, qr_address, qr_extra)
+            qc = diffusion(qc, qr_shots, qr_extra)
+
+            # Append game gate
+            qc.append(game_gate.inverse(), game_qubits)
+
+            # Check solution
+            try:
+                qc.mct(qr_cluster, qr_ancilla[0], qr_extra, mode="v-chain")
+            except ValueError:
+                qc.mct(qr_cluster, qr_ancilla[0], qr_extra, mode="recursion")
+
+            # Uncompute game gate
+            qc.append(game_gate, game_qubits)
+
+        # Diffusion circuit
+        qc = diffusion(qc, qr_address, qr_extra)
 
     # Measure results
     if count_shots:
@@ -157,7 +169,7 @@ def week3_ans_func(problem_set, count_shots=False):
 
 
 if __name__ == "__main__":
-    qc = week3_ans_func(problem_set[0:4], count_shots=True)
+    qc = week3_ans_func(problem_set[8:12], count_shots=False)
 
     backend = Aer.get_backend("qasm_simulator")
     tic = time.perf_counter()
@@ -172,10 +184,9 @@ if __name__ == "__main__":
     result = job.result()
     count = result.get_counts()
 
-    toc = time.perf_counter()
-
-    print(f"Circuit executed in {toc - tic:0.4f} seconds")
-
     for k, v in count.items():
         print(k, v)
 
+    toc = time.perf_counter()
+
+    print(f"Circuit executed in {toc - tic:0.4f} seconds")
