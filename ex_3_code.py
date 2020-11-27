@@ -33,49 +33,37 @@ def week3_ans_func(problem_set, count_shots=False):
     counting_qubits = 4
 
     # 4 + 4 (shot options) + 6 (clusters) + 4 (address) + 3 (counting) + 1 (ancilla) = 22, 6 extra!
-    qr_shot_h = QuantumRegister(4, name="horz shots")
-    qr_shot_v = QuantumRegister(4, name="vert shots")
-    qr_clustr = QuantumRegister(6, name="clusters")
-    qr_addres = QuantumRegister(address_qubits, name="address")
-    qr_countr = QuantumRegister(counting_qubits, name="counting")
-    qr_ancl_g = QuantumRegister(1, name="game ancilla")
-    qr_ancl_c = QuantumRegister(1, name="count ancilla")
+    qr_shots = QuantumRegister(8, name="shots")
+    qr_cluster = QuantumRegister(6, name="clusters")
+    qr_address = QuantumRegister(address_qubits, name="address")
+    qr_counter = QuantumRegister(counting_qubits, name="counting")
+    qr_ancilla = QuantumRegister(2, name="ancilla")
     num_extra = 28 - len(
-        qr_shot_h[:]
-        + qr_shot_v[:]
-        + qr_clustr[:]
-        + qr_addres[:]
-        + qr_countr[:]
-        + qr_ancl_g[:]
-        + qr_ancl_c[:]
+        qr_shots[:] + qr_cluster[:] + qr_address[:] + qr_counter[:] + qr_ancilla[:]
     )
 
     qr_extra = QuantumRegister(num_extra, name="extra")
 
-    cr_shots = ClassicalRegister(len(qr_shot_h[:] + qr_shot_v[:]))
+    cr_shots = ClassicalRegister(len(qr_shots))
     cr_address = ClassicalRegister(address_qubits)
 
     if count_shots:
         qc = QuantumCircuit(
-            qr_shot_h,
-            qr_shot_v,
-            qr_addres,
-            qr_clustr,
-            qr_countr,
-            qr_ancl_g,
-            qr_ancl_c,
+            qr_shots,
+            qr_address,
+            qr_cluster,
+            qr_counter,
+            qr_ancilla,
             qr_extra,
             cr_shots,
         )
     else:
         qc = QuantumCircuit(
-            qr_shot_h,
-            qr_shot_v,
-            qr_addres,
-            qr_clustr,
-            qr_countr,
-            qr_ancl_g,
-            qr_ancl_c,
+            qr_shots,
+            qr_address,
+            qr_cluster,
+            qr_counter,
+            qr_ancilla,
             qr_extra,
             cr_address,
         )
@@ -84,33 +72,32 @@ def week3_ans_func(problem_set, count_shots=False):
     # No code required
 
     # Prepare ancilla
-    qc.x(qr_ancl_g[:] + qr_ancl_c[:])
-    qc.h(qr_ancl_g[:] + qr_ancl_c[:])
+    qc.x(qr_ancilla)
+    qc.h(qr_ancilla)
 
     # Put solution into superposition
-    qc.h(qr_shot_h[:] + qr_shot_v[:] + qr_addres[:])
+    qc.h(qr_shots[:] + qr_address[:])
 
     qc.barrier()
 
-    # Load gates
-    game_qubits = (
-        qr_shot_h[:] + qr_shot_v[:] + qr_addres[:] + qr_clustr[:] + qr_extra[:]
-    )
+    # Load game gate
+    game_qubits = qr_shots[:] + qr_address[:] + qr_cluster[:] + qr_extra[:]
 
     game_gate = game_logic_oracle(
-        qr_horizontal=qr_shot_h,
-        qr_vertical=qr_shot_v,
-        qr_address=qr_addres,
-        qr_cluster=qr_clustr,
+        qr_shots=qr_shots,
+        qr_address=qr_address,
+        qr_cluster=qr_cluster,
         qr_extra=qr_extra,
-    )
-    counter_qubits = qr_shot_h[:] + qr_shot_v[:] + qr_countr[:]
-    count_me_qubits = qr_shot_h[:] + qr_shot_v[:]
-    counter_gate = count_oracle(
-        qr_count_me=count_me_qubits, qr_counter=qr_countr, return_gate=True
+        prob_set=problem_set,
     )
 
-    game_iterations = 1
+    # Load counter gate
+    counter_qubits = qr_shots[:] + qr_counter[:]
+    counter_gate = count_oracle(
+        qr_count_me=qr_shots, qr_counter=qr_counter, return_gate=True
+    )
+
+    game_iterations = 2
     count_iterations = 1
 
     # Code for Grover's algorithm with iterations = 1 will be as follows.
@@ -119,44 +106,50 @@ def week3_ans_func(problem_set, count_shots=False):
         # Perform Grover's algorithm for game logic
         for j in range(game_iterations):
 
+            print(f"Starting game iteration {j}")
             # Append game gate
             qc.append(game_gate, game_qubits)
 
             # Check solution
             try:
-                qc.mct(qr_clustr, qr_ancl_g, qr_extra, mode="v-chain")
+                qc.mct(qr_cluster, qr_ancilla[0], qr_extra, mode="v-chain")
             except ValueError:
-                qc.mct(qr_clustr, qr_ancl_g, qr_extra, mode="recursion")
+                qc.mct(qr_cluster, qr_ancilla[0], qr_extra, mode="recursion")
 
             # Uncompute game gate
             qc.append(game_gate.inverse(), game_qubits)
 
             # Diffusion circuit
-            qc = diffusion(qc, qr_shot_h[:] + qr_shot_v[:], qr_extra)
+            qc = diffusion(qc, qr_shots, qr_extra)
 
-        # Perform Grover's algorithm for counting logic
+        # Perform Grover's algorithm for game logic
         for j in range(count_iterations):
 
-            # Append count gate
+            print(f"Starting count iteration {j}")
+            # Append game gate
             qc.append(counter_gate, counter_qubits)
 
-            # Check solution
-            try:
-                qc.mct(qr_countr, qr_ancl_c, qr_extra, mode="v-chain")
-            except ValueError:
-                qc.mct(qr_countr, qr_ancl_c, qr_extra, mode="recursion")
+            # Mark the desired state: 3 or less = 00**
+            qc.x(qr_counter[2:])
+
+            # Check for the solution
+            qc.mct(qr_counter, qr_ancilla[1], qr_extra, mode="v-chain")
+            qc.barrier()
+
+            # Unmark the desired state
+            qc.x(qr_counter[2:])
 
             # Uncompute game gate
             qc.append(counter_gate.inverse(), counter_qubits)
 
             # Diffusion circuit
-            qc = diffusion(qc, qr_addres, qr_extra)
+            qc = diffusion(qc, qr_address, qr_extra)
 
     # Measure results
     if count_shots:
-        qc.measure(qr_shot_h[:] + qr_shot_v[:], cr_shots)
+        qc.measure(qr_shots, cr_shots)
     else:
-        qc.measure(qr_addres, cr_address)
+        qc.measure(qr_address, cr_address)
 
     qc = qc.reverse_bits()
 
@@ -164,19 +157,24 @@ def week3_ans_func(problem_set, count_shots=False):
 
 
 if __name__ == "__main__":
-    qc = week3_ans_func(problem_set[8:12], count_shots=True)
+    qc = week3_ans_func(problem_set[0:4], count_shots=True)
 
     backend = Aer.get_backend("qasm_simulator")
     tic = time.perf_counter()
     job = execute(
-        qc, backend=backend, shots=15000, backend_options={"fusion_enable": True},
+        qc,
+        backend=backend,
+        shots=2000,
+        optimization_level=2,
+        backend_options={"fusion_enable": True},
     )
-    toc = time.perf_counter()
-
-    print(f"Circuit executed in {toc - tic:0.4f} seconds")
 
     result = job.result()
     count = result.get_counts()
+
+    toc = time.perf_counter()
+
+    print(f"Circuit executed in {toc - tic:0.4f} seconds")
 
     for k, v in count.items():
         print(k, v)

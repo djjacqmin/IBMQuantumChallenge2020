@@ -22,8 +22,8 @@ def diffusion(qc: QuantumCircuit, qubits: QuantumRegister, qr_extra: QuantumRegi
 
 def mark_address(qc: QuantumCircuit, qubits: QuantumRegister, index: int):
 
-    if index not in range(len(qubits) ** 2):
-        raise ValueError("index must be in range(16)")
+    if index not in range(2 ** len(qubits)):
+        raise ValueError(f"index is {index} must be in range(16)")
 
     # if len(qubits) != 4:
     #    raise ValueError("qubits must have length of 4")
@@ -44,8 +44,7 @@ def mark_address(qc: QuantumCircuit, qubits: QuantumRegister, index: int):
 
 
 def game_logic_oracle(
-    qr_horizontal: QuantumRegister,
-    qr_vertical: QuantumRegister,
+    qr_shots: QuantumRegister,
     qr_address: QuantumRegister,
     qr_cluster: QuantumRegister,
     qr_extra: QuantumRegister,
@@ -53,7 +52,7 @@ def game_logic_oracle(
     return_gate: bool = True,
 ):
 
-    qc = QuantumCircuit(qr_horizontal, qr_vertical, qr_address, qr_cluster, qr_extra)
+    qc = QuantumCircuit(qr_shots, qr_address, qr_cluster, qr_extra)
 
     for p, puzzle in enumerate(prob_set):  # for each puzzle
 
@@ -64,13 +63,10 @@ def game_logic_oracle(
         for c, (h, v) in enumerate(puzzle):  # for each position pair in puzzle
             # Control cluster c with address and the puzzle's horizontal number
             qc.mct(
-                qr_address[:] + [qr_horizontal[h]],
-                qr_cluster[c],
-                qr_extra,
-                mode="v-chain",
+                qr_address[:] + [qr_shots[h]], qr_cluster[c], qr_extra, mode="v-chain",
             )
             qc.mct(
-                qr_address[:] + [qr_vertical[v]],
+                qr_address[:] + [qr_shots[v + 4]],
                 qr_cluster[c],
                 qr_extra,
                 mode="v-chain",
@@ -78,6 +74,7 @@ def game_logic_oracle(
 
         # Unmark the puzzles's address:
         qc = mark_address(qc, qr_address, p)
+
     # Convert to gate and return
     if return_gate:
 
