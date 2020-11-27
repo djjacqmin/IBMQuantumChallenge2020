@@ -98,7 +98,6 @@ def week3_ans_func(problem_set, count_shots=False):
     )
 
     game_iterations = 1
-    counter_iters = 2
     # Code for Grover's algorithm with iterations = 1 will be as follows.
     for _ in range(1):
 
@@ -123,16 +122,18 @@ def week3_ans_func(problem_set, count_shots=False):
         # Append counter gate
         qc.append(counter_gate, counter_qubits)
 
-        # Mark the desired state: 3 or less = 00**
-        qc.x(qr_counter[2:])
+        # Mark the desired state: Exactly 4: 0100
+        qc.x(qr_counter[0:2])
+        qc.x(qr_counter[3])
 
         # Check for the solution
         qc.h(qr_ancilla[1])
-        qc.mct(qr_counter[2:], qr_ancilla[1], qr_extra, mode="v-chain")
+        qc.mct(qr_counter, qr_ancilla[1], qr_extra, mode="v-chain")
         qc.h(qr_ancilla[1])
 
         # Unmark the desired state
-        qc.x(qr_counter[2:])
+        qc.x(qr_counter[0:2])
+        qc.x(qr_counter[3])
 
         # Uncompute counter gate
         qc.append(counter_gate.inverse(), counter_qubits)
@@ -158,60 +159,6 @@ def week3_ans_func(problem_set, count_shots=False):
         # Diffusion circuit
         qc = diffusion(qc, qr_address, qr_extra)
 
-        """for _ in range(counter_iters):
-
-            # Append counter gate
-            qc.append(counter_gate, counter_qubits)
-
-            # Mark the desired state: 3 or less = 00**
-            qc.x(qr_counter[2:])
-
-            # Check for the solution
-            qc.mct(qr_counter[2:], qr_ancilla[1], qr_extra, mode="v-chain")
-            qc.barrier()
-
-            # Unmark the desired state
-            qc.x(qr_counter[2:])
-
-            # Uncompute counter gate
-            qc.append(counter_gate.inverse(), counter_qubits)
-
-            qc = diffusion(qc, qr_address, qr_extra)
-
-        # Append game gate
-        qc.append(game_gate, game_qubits)
-
-        # Check solution
-        try:
-            qc.mct(qr_cluster, qr_ancilla[0], qr_extra, mode="v-chain")
-        except ValueError:
-            qc.mct(qr_cluster, qr_ancilla[0], qr_extra, mode="recursion")
-
-        # Uncompute game gate
-        qc.append(game_gate.inverse(), game_qubits)
-
-        for _ in range(counter_iters):
-
-            qc = diffusion(qc, qr_address, qr_extra)
-
-            # Append counter gate
-            qc.append(counter_gate.inverse(), counter_qubits)
-
-            # Mark the desired state: 3 or less = 00**
-            qc.x(qr_counter[2:])
-
-            # Check for the solution
-            qc.mct(qr_counter[2:], qr_ancilla[1], qr_extra, mode="v-chain")
-            qc.barrier()
-
-            # Unmark the desired state
-            qc.x(qr_counter[2:])
-
-            # Uncompute counter gate
-            qc.append(counter_gate, counter_qubits)
-
-        qc = diffusion(qc, qr_shots, qr_extra)"""
-
     # Measure results
     if count_shots:
         qc.measure(qr_shots, cr_shots)
@@ -224,14 +171,14 @@ def week3_ans_func(problem_set, count_shots=False):
 
 
 if __name__ == "__main__":
-    qc = week3_ans_func(problem_set[8:10] * 2, count_shots=False)
+    qc = week3_ans_func(problem_set, count_shots=False)
 
     backend = Aer.get_backend("qasm_simulator")
     tic = time.perf_counter()
     job = execute(
         qc,
         backend=backend,
-        shots=20000,
+        shots=2000,
         optimization_level=3,
         backend_options={"fusion_enable": True},
     )
