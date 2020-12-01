@@ -4,7 +4,7 @@ from qiskit import execute, Aer
 from qc_grader import prepare_ex3, grade_ex3
 import numpy as np
 from counter import count_oracle
-from week3_func import game_logic_oracle, diffusion
+from week3_func import game_logic_oracle_opt, game_logic_oracle, diffusion
 
 problem_set = [
     [["0", "2"], ["1", "0"], ["1", "2"], ["1", "3"], ["2", "0"], ["3", "3"]],
@@ -83,7 +83,7 @@ def week3_ans_func(problem_set, count_shots=False):
     # Load game gate
     game_qubits = qr_shots[:] + qr_address[:] + qr_cluster[:] + qr_extra[:]
 
-    game_gate = game_logic_oracle(
+    game_gate = game_logic_oracle_opt(
         qr_shots=qr_shots,
         qr_address=qr_address,
         qr_cluster=qr_cluster,
@@ -127,9 +127,7 @@ def week3_ans_func(problem_set, count_shots=False):
         qc.x(qr_counter[3])
 
         # Check for the solution
-        qc.h(qr_ancilla[1])
-        qc.mct(qr_counter, qr_ancilla[1], qr_extra, mode="v-chain")
-        qc.h(qr_ancilla[1])
+        qc.mct(qr_counter[0:4], qr_ancilla[0], qr_extra, mode="v-chain")
 
         # Unmark the desired state
         qc.x(qr_counter[0:2])
@@ -165,22 +163,16 @@ def week3_ans_func(problem_set, count_shots=False):
     else:
         qc.measure(qr_address, cr_address)
 
-    qc = qc.reverse_bits()
-
     return qc
 
 
 if __name__ == "__main__":
-    qc = week3_ans_func(problem_set, count_shots=False)
+    qc = week3_ans_func(problem_set[8:12], count_shots=False)
 
     backend = Aer.get_backend("qasm_simulator")
     tic = time.perf_counter()
     job = execute(
-        qc,
-        backend=backend,
-        shots=2000,
-        optimization_level=3,
-        backend_options={"fusion_enable": True},
+        qc, backend=backend, shots=1000, backend_options={"fusion_enable": True},
     )
 
     result = job.result()
